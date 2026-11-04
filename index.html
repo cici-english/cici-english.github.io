@@ -1,391 +1,47 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>3D 骰子 · 定格 1-4</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; }
-  body {
-    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-    background: radial-gradient(circle at 50% 35%, #243056 0%, #121a30 50%, #05070f 100%);
-    color: #e8ecf5;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  #scene { position: fixed; inset: 0; display: block; }
-
-  .hud { position: fixed; left: 0; right: 0; pointer-events: none; }
-  .top { top: 28px; text-align: center; }
-  .top h1 { font-size: 22px; font-weight: 700; letter-spacing: 2px; }
-  .top p  { margin-top: 8px; font-size: 14px; opacity: .72; }
-
-  .badge {
-    position: fixed; top: 50%; left: 50%;
-    transform: translate(-50%, -50%) scale(.4);
-    width: 132px; height: 132px; border-radius: 26px;
-    background: linear-gradient(145deg, #ff7a59, #ff3d77);
-    box-shadow: 0 12px 40px rgba(255, 61, 119, .45), inset 0 2px 6px rgba(255,255,255,.35);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 76px; font-weight: 800; color: #fff;
-    opacity: 0; transition: opacity .25s ease, transform .35s cubic-bezier(.2,1.4,.4,1);
-    pointer-events: none;
-  }
-  .badge.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-
-  .hint {
-    position: fixed; bottom: 46px; left: 0; right: 0; text-align: center;
-    font-size: 15px; opacity: .8; pointer-events: none;
-    transition: color .2s;
-  }
-  .hint b { color: #ffd36e; }
-  .state {
-    position: fixed; bottom: 80px; left: 0; right: 0; text-align: center;
-    font-size: 13px; letter-spacing: 1px; opacity: .55;
-  }
-  .btn {
-    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-    padding: 12px 30px; border: none; border-radius: 999px;
-    font-size: 15px; font-weight: 700; letter-spacing: 1px;
-    background: linear-gradient(135deg, #5b8cff, #8a5bff);
-    color: #fff; cursor: pointer; pointer-events: auto;
-    box-shadow: 0 8px 24px rgba(91,140,255,.4);
-    transition: transform .12s, filter .12s;
-  }
-  .btn:active { transform: translateX(-50%) scale(.95); filter: brightness(1.1); }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线课程教学 HTML 网站</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #f5f5f5;
+            color: #333;
+        }
+        .card {
+            background: #fff;
+            padding: 3rem 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            text-align: center;
+            max-width: 500px;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+        }
+        p {
+            font-size: 1.1rem;
+            color: #666;
+            line-height: 1.7;
+        }
+        .hl {
+            color: #2563eb;
+            font-weight: 600;
+        }
+    </style>
 </head>
 <body>
-  <canvas id="scene"></canvas>
-
-  <div class="hud top">
-    <h1>🎲 3D 骰子 · 定格 1-4</h1>
-    <p>六面分布 1–6，但定格结果只会在 <b>1、2、3、4</b> 之间</p>
-  </div>
-
-  <div class="badge" id="badge">?</div>
-  <div class="state" id="state">点击屏幕或按钮投掷</div>
-  <div class="hint" id="hint">点击 <b>投掷 / 暂停定格</b></div>
-  <button class="btn" id="btn">投 掷</button>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script>
-(function () {
-  // ---------- 基础场景 ----------
-  const canvas = document.getElementById('scene');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  camera.position.set(0, 3.2, 5.2);
-  camera.lookAt(0, 0, 0);
-
-  // ---------- 环境反射（让骰子呈现光滑塑料/树脂质感）----------
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
-  const envCanvas = document.createElement('canvas');
-  envCanvas.width = 512; envCanvas.height = 256;
-  const ex = envCanvas.getContext('2d');
-  const eg = ex.createLinearGradient(0, 0, 0, 256);
-  eg.addColorStop(0, '#eaf1ff');
-  eg.addColorStop(0.5, '#38477a');
-  eg.addColorStop(1, '#080d1a');
-  ex.fillStyle = eg; ex.fillRect(0, 0, 512, 256);
-  ex.fillStyle = 'rgba(255,255,255,0.6)';
-  ex.fillRect(60, 36, 190, 24);          // 顶部亮光带 → 顶面大片反光
-  ex.fillStyle = 'rgba(0,229,255,0.35)';
-  ex.fillRect(0, 120, 120, 136);          // 左侧青光
-  ex.fillStyle = 'rgba(255,79,216,0.30)';
-  ex.fillRect(392, 110, 120, 146);        // 右侧品红光
-  const envTex = new THREE.CanvasTexture(envCanvas);
-  envTex.mapping = THREE.EquirectangularReflectionMapping;
-  const envRT = pmrem.fromEquirectangular(envTex);
-  scene.environment = envRT.texture;
-  envTex.dispose(); pmrem.dispose();
-
-  // ---------- 灯光 ----------
-  scene.add(new THREE.AmbientLight(0xffffff, 0.22));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.7);   // 柔和主光（顶面反光）
-  dir.position.set(2, 9, 5);
-  dir.castShadow = true;
-  dir.shadow.mapSize.set(1024, 1024);
-  dir.shadow.camera.left = -4; dir.shadow.camera.right = 4;
-  dir.shadow.camera.top = 4; dir.shadow.camera.bottom = -4;
-  dir.shadow.bias = -0.0005;
-  scene.add(dir);
-  const rimCyan = new THREE.DirectionalLight(0x00e5ff, 1.5);    // 左侧青蓝描边光
-  rimCyan.position.set(-7, 2, 3);
-  scene.add(rimCyan);
-  const rimMagenta = new THREE.DirectionalLight(0xff4fd8, 1.5); // 右侧品红描边光
-  rimMagenta.position.set(7, 1, -2);
-  scene.add(rimMagenta);
-
-  // 地面（接收阴影）
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(30, 30),
-    new THREE.ShadowMaterial({ opacity: 0.28 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -1.35;
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  // ---------- 生成骰子面的点数贴图 ----------
-  function makeFace(n) {
-    const s = 256;
-    const c = document.createElement('canvas');
-    c.width = c.height = s;
-    const x = c.getContext('2d');
-    // 亮白底 + 圆角
-    x.fillStyle = '#fbfcff';
-    roundRect(x, 8, 8, s - 16, s - 16, 36); x.fill();
-    x.strokeStyle = '#e6e9f2'; x.lineWidth = 3;
-    roundRect(x, 8, 8, s - 16, s - 16, 36); x.stroke();
-
-    const pts = {
-      1: [[0.5, 0.5]],
-      2: [[0.28, 0.28], [0.72, 0.72]],
-      3: [[0.26, 0.26], [0.5, 0.5], [0.74, 0.74]],
-      4: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72]],
-      5: [[0.28, 0.28], [0.72, 0.28], [0.5, 0.5], [0.28, 0.72], [0.72, 0.72]],
-      6: [[0.28, 0.24], [0.72, 0.24], [0.28, 0.5], [0.72, 0.5], [0.28, 0.76], [0.72, 0.76]],
-    }[n];
-    const r = s * 0.09;
-    pts.forEach(p => {
-      // 黑色凹陷点数（带轻微内反光，模拟亮面材质）
-      x.beginPath();
-      x.fillStyle = 'rgba(0,0,0,0.18)';
-      x.arc(p[0] * s, p[1] * s + r * 0.18, r, 0, Math.PI * 2); // 阴影边
-      x.fill();
-      x.beginPath();
-      x.fillStyle = '#0c0c10';
-      x.arc(p[0] * s, p[1] * s, r, 0, Math.PI * 2);
-      x.fill();
-      x.beginPath();
-      x.fillStyle = 'rgba(255,255,255,0.35)';
-      x.arc(p[0] * s - r * 0.3, p[1] * s - r * 0.3, r * 0.32, 0, Math.PI * 2);
-      x.fill();
-    });
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.anisotropy = 4;
-    return tex;
-  }
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
-  }
-
-  // BoxGeometry 材质顺序: +X,-X,+Y,-Y,+Z,-Z
-  // 对面之和为 7: 1-6, 2-5, 3-4
-  const faceNumbers = [1, 6, 2, 5, 3, 4];
-  const materials = faceNumbers.map(n =>
-    new THREE.MeshPhysicalMaterial({
-      map: makeFace(n),
-      color: 0xffffff,
-      roughness: 0.22,
-      metalness: 0.0,
-      clearcoat: 1.0,          // 清漆层 → 光滑树脂高光
-      clearcoatRoughness: 0.18,
-      envMapIntensity: 1.15,
-    })
-  );
-  const dice = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), materials);
-  dice.castShadow = true;
-  scene.add(dice);
-
-  // 背景霓虹粒子（呼应封面的科幻光斑）
-  const N = 150;
-  const pPos = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) {
-    pPos[i * 3]     = (Math.random() - 0.5) * 18;
-    pPos[i * 3 + 1] = (Math.random() - 0.5) * 11;
-    pPos[i * 3 + 2] = (Math.random() - 0.5) * 11 - 3;
-  }
-  const pGeo = new THREE.BufferGeometry();
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
-    color: 0x9fd0ff, size: 0.05, transparent: true, opacity: 0.5, depthWrite: false
-  }));
-  scene.add(particles);
-
-  // 让某个数字朝上的目标欧拉角（仅用单轴，顶面正确即可）
-  const FACE_UP = {
-    1: { x: 0, y: 0, z: Math.PI / 2 },
-    2: { x: 0, y: 0, z: 0 },
-    3: { x: -Math.PI / 2, y: 0, z: 0 },
-    4: { x: Math.PI / 2, y: 0, z: 0 },
-    5: { x: Math.PI, y: 0, z: 0 },
-    6: { x: 0, y: 0, z: -Math.PI / 2 },
-  };
-
-  // ---------- 状态机 ----------
-  let mode = 'idle';            // idle | rolling | settling
-  const rot = { x: 0, y: 0, z: 0 };
-  let vel = { x: 0, y: 0, z: 0 };
-  let startRot = null, endRot = null, settleT = 0, settleDur = 1.4;
-  let lastResult = null;
-
-  function applyRotation() {
-    dice.rotation.set(rot.x, rot.y, rot.z);
-  }
-
-  function randInt(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
-
-  function startRoll() {
-    mode = 'rolling';
-    vel.x = (Math.random() * 2 - 1) * 14 + (Math.random() < .5 ? -6 : 6);
-    vel.y = (Math.random() * 2 - 1) * 14 + (Math.random() < .5 ? -6 : 6);
-    vel.z = (Math.random() * 2 - 1) * 14 + (Math.random() < .5 ? -6 : 6);
-    setState('rolling', '旋转中… 再次点击定格');
-    setBadge(null);
-    playRoll();
-  }
-
-  function stopRoll() {
-    const num = randInt(1, 4);   // 定格限制在 1-4
-    lastResult = num;
-    const base = FACE_UP[num];
-    const turns = randInt(2, 3); // 额外多转几圈，视觉更自然
-    const axisEnd = (cur, b) => {
-      let k = Math.ceil((cur - b) / (Math.PI * 2));
-      let e = b + Math.PI * 2 * k + Math.PI * 2 * turns;
-      if (e <= cur) e += Math.PI * 2;
-      return e;
-    };
-    startRot = { x: rot.x, y: rot.y, z: rot.z };
-    endRot = { x: axisEnd(rot.x, base.x), y: axisEnd(rot.y, base.y), z: axisEnd(rot.z, base.z) };
-    settleT = 0;
-    settleDur = 1.4;
-    mode = 'settling';
-    setState('settling', '定格中…');
-  }
-
-  function finishSettle() {
-    const base = FACE_UP[lastResult];
-    rot.x = base.x; rot.y = base.y; rot.z = base.z; // 消除浮点漂移
-    applyRotation();
-    mode = 'idle';
-    setBadge(lastResult);
-    setState('idle', '结果：' + lastResult + ' · 点击重新投掷');
-    playDing(lastResult);
-  }
-
-  function onClick() {
-    ensureAudio();
-    if (mode === 'idle') {
-      startRoll();
-    } else if (mode === 'rolling') {
-      stopRoll();
-    }
-    // settling 期间忽略点击
-  }
-  document.addEventListener('click', onClick);
-  document.getElementById('btn').addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
-
-  // ---------- UI 辅助 ----------
-  const badge = document.getElementById('badge');
-  const stateEl = document.getElementById('state');
-  function setBadge(n) {
-    if (n === null) { badge.classList.remove('show'); return; }
-    badge.textContent = n;
-    badge.classList.add('show');
-  }
-  function setState(m, txt) { stateEl.textContent = txt; }
-
-  // ---------- 音效 (Web Audio，无需外部文件) ----------
-  let actx = null;
-  function ensureAudio() {
-    if (!actx) {
-      try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
-      catch (e) { actx = null; }
-    }
-    if (actx && actx.state === 'suspended') actx.resume();
-  }
-  function tone(freq, t, dur, type, gain) {
-    if (!actx) return;
-    const o = actx.createOscillator();
-    const g = actx.createGain();
-    o.type = type || 'sine';
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain || 0.25, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(actx.destination);
-    o.start(t); o.stop(t + dur + 0.05);
-  }
-  const SCALE = { 1: 261.63, 2: 329.63, 3: 392.00, 4: 523.25 }; // C4 D4 E4 C5
-  function playRoll() {
-    if (!actx) return;
-    const t = actx.currentTime;
-    tone(180, t, 0.18, 'sawtooth', 0.12);
-    tone(120, t + 0.05, 0.2, 'square', 0.08);
-  }
-  function playDing(n) {
-    if (!actx) return;
-    const t = actx.currentTime;
-    const f = SCALE[n] || 392;
-    tone(f, t, 0.45, 'triangle', 0.3);
-    tone(f * 2, t + 0.03, 0.35, 'sine', 0.18);
-    tone(f * 1.5, t + 0.06, 0.3, 'sine', 0.12);
-  }
-
-  // ---------- 主循环 ----------
-  const clock = new THREE.Clock();
-  function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05);
-
-    if (mode === 'rolling') {
-      rot.x += vel.x * dt; rot.y += vel.y * dt; rot.z += vel.z * dt;
-      // 轻微随机扰动让旋转更自然
-      vel.x += (Math.random() - 0.5) * 4 * dt;
-      vel.y += (Math.random() - 0.5) * 4 * dt;
-      vel.z += (Math.random() - 0.5) * 4 * dt;
-      applyRotation();
-    } else if (mode === 'settling') {
-      settleT += dt;
-      let p = Math.min(settleT / settleDur, 1);
-      const e = 1 - Math.pow(1 - p, 3); // easeOutCubic
-      rot.x = startRot.x + (endRot.x - startRot.x) * e;
-      rot.y = startRot.y + (endRot.y - startRot.y) * e;
-      rot.z = startRot.z + (endRot.z - startRot.z) * e;
-      applyRotation();
-      if (p >= 1) finishSettle();
-    } else {
-      // idle 时给一点缓慢漂浮，显得有活力
-      const t = clock.elapsedTime;
-      dice.position.y = Math.sin(t * 1.2) * 0.05;
-    }
-    particles.rotation.y += dt * 0.04;
-    particles.rotation.x += dt * 0.015;
-    renderer.render(scene, camera);
-  }
-
-  // 初始摆出 2 点
-  rot.x = FACE_UP[2].x; rot.y = FACE_UP[2].y; rot.z = FACE_UP[2].z;
-  applyRotation();
-  animate();
-
-  // ---------- 自适应 ----------
-  function resize() {
-    const w = window.innerWidth, h = window.innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  }
-  window.addEventListener('resize', resize);
-  resize();
-})();
-</script>
+    <div class="card">
+        <h1>在线课程教学 HTML 网站</h1>
+        <p>本网站用于在线课程教学 HTML 部署，<br><span class="hl">让课程内容在浏览器中即时呈现。</span></p>
+    </div>
 </body>
 </html>
